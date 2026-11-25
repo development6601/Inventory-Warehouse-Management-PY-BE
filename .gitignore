@@ -1,0 +1,22 @@
+# Virtual environment
+venv/
+
+# Environment variables
+.env
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Test and coverage
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# IDE settings
+.idea/
+.vscode/
+
+first.text
+inventory_warehouse_management_api.pdf
