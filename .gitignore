@@ -18,5 +18,4 @@ htmlcov/
 .idea/
 .vscode/
 
-first.text
-inventory_warehouse_management_api.pdf
+docs/
