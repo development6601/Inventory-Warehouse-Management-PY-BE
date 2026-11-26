@@ -1,7 +1,8 @@
-﻿from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
+from app.api.v1 import api_router
 from app.core.config import settings
 from app.database.connection import engine
 
@@ -10,6 +11,8 @@ app = FastAPI(
     version="1.0.0",
     debug=settings.debug,
 )
+
+app.include_router(api_router)
 
 
 @app.get("/", tags=["General"])
