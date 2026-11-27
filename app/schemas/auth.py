@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
-from app.schemas.common import validate_password_value
+from app.schemas.common import validate_password_value, validate_phone_value
 
 
 class RegisterRequest(BaseModel):
@@ -17,10 +17,15 @@ class RegisterRequest(BaseModel):
     def password_rules(cls, value: str) -> str:
         return validate_password_value(value)
 
-    @field_validator("name", "phone")
+    @field_validator("name")
     @classmethod
-    def strip_text(cls, value: str) -> str:
+    def strip_name(cls, value: str) -> str:
         return value.strip()
+
+    @field_validator("phone")
+    @classmethod
+    def phone_rules(cls, value: str) -> str:
+        return validate_phone_value(value)
 
 
 class LoginRequest(BaseModel):
@@ -65,8 +70,22 @@ class UpdateMeRequest(BaseModel):
     phone: str | None = Field(default=None, min_length=7, max_length=20)
     address: str | None = None
 
+    @field_validator("name")
+    @classmethod
+    def strip_optional_name(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        return value.strip()
+
+    @field_validator("phone")
+    @classmethod
+    def phone_rules(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        return validate_phone_value(value)
+
 
 class ForgotPasswordResponse(BaseModel):
     message: str
-    reset_token: str
-    expires_in_minutes: int
+    reset_token: str | None = None
+    expires_in_minutes: int | None = None

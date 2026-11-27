@@ -57,7 +57,7 @@ def get_current_user(
     if credentials is None or credentials.scheme.lower() != "bearer":
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Not authenticated",
+            detail="Authentication required. Please sign in.",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
@@ -67,7 +67,7 @@ def get_current_user(
     except (PyJWTError, KeyError, ValueError):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired access token",
+            detail="Invalid or expired access token. Please sign in again.",
             headers={"WWW-Authenticate": "Bearer"},
         ) from None
 
@@ -84,7 +84,7 @@ def get_current_user(
     if user is None or not user.is_active:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="User not found or inactive",
+            detail="Your account is unavailable. Please contact your administrator.",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
@@ -107,7 +107,11 @@ def require_permission(permission_name: str) -> Callable:
         if permission_name not in current.permission_names:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Permission denied: {permission_name}",
+                detail=(
+                    "You do not have enough credentials for this action. "
+                    f"Required permission: {permission_name}. "
+                    "Ask an Admin if you need access."
+                ),
             )
         return current
 

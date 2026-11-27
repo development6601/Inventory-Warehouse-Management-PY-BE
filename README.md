@@ -1,100 +1,72 @@
-
 # Inventory & Warehouse Management API
 
-Backend application for managing products, warehouses, inventory, stock operations, and transaction history.
+FastAPI backend for multi-warehouse inventory: users/roles, warehouses, products, stock movements, alerts, and reports (Module 1 auth & warehouses implemented first).
 
-## Technology Stack
+## Stack
 
-- **Language:** Python 3.13
-- **Framework:** FastAPI
-- **Database:** PostgreSQL
-- **ORM:** SQLAlchemy
-- **Database Migrations:** Alembic
-- **Validation:** Pydantic
-- **Authentication:** JWT
-- **Password Hashing:** Argon2
+- Python 3.13, FastAPI, Pydantic
+- PostgreSQL, SQLAlchemy 2, Alembic
+- JWT access/refresh tokens, Argon2 password hashing
 
-## Project Features
+## Current status (Modules 1 + 2)
 
-- User and role management
-- Permission-based access control
-- Warehouse management
-- Product and category management
-- Inventory tracking
-- Stock IN and OUT operations
-- Stock adjustments
-- Warehouse-to-warehouse transfers
-- Inventory transaction history
-- Low-stock alerts
-- Reports and analytics
+- Auth: register (STAFF), login, refresh, logout, change/forgot/reset password, `/auth/me`
+- Users: Admin create (role + warehouse), list, get, update, activate/deactivate
+- Warehouses: create/list/get/update/status, assign/unassign, list users, managers in detail
+- Products: categories CRUD/status, fixed units (`GET /units`), products CRUD/status, images (URL-only), by-sku lookup
+- RBAC seed: Admin / Manager / Staff permissions (catalog write = Admin)
 
-## Project Structure
+Live docs: https://inventory-warehouse-api.onrender.com/docs
+
+## Project structure
 
 ```text
-Final Project/
-├── app/
-│   ├── __init__.py
-│   └── main.py
-├── venv/
-├── .env.example
-├── .gitignore
-├── README.md
-└── requirements.txt
+app/
+  api/v1/          # HTTP routes (auth, users, warehouses, units, categories, products)
+  core/            # config, security (JWT/passwords), deps (permissions)
+  database/        # engine + session
+  db/seed_data.py  # RBAC catalog
+  models/          # SQLAlchemy tables
+  schemas/         # request/response validation
+  services/        # business logic
+  scripts/seed.py  # seed RBAC into DB
+alembic/           # migrations
 ```
 
-## Local Development Setup
-
-### 1. Prerequisites
-
-- Python 3.13
-- PostgreSQL
-- Git
-
-### 2. Clone the Repository
-
-```bash
-git clone <repository-url>
-cd <project-folder>
-```
-
-### 3. Create Virtual Environment
+## Setup
 
 ```powershell
 py -3.13 -m venv venv
-```
-
-### 4. Activate Virtual Environment
-
-```powershell
 .\venv\Scripts\Activate.ps1
-```
-
-### 5. Install Dependencies
-
-```powershell
 python -m pip install -r requirements.txt
 ```
 
-### 6. Configure Environment Variables
+Copy `.env.example` to `.env` and set `DATABASE_URL` + `SECRET_KEY`.
 
-Create a `.env` file using `.env.example` as a template.
+Token defaults (also set these on Render Dashboard for the live service):
 
-Update the database connection string and secret key.
+- `ACCESS_TOKEN_EXPIRE_MINUTES=1440` (24 hours)
+- `REFRESH_TOKEN_EXPIRE_DAYS=180` (6 months)
 
-### 7. Run the Application
+This project currently uses the **shared Render Postgres** from local `.env` as well, so migrate/seed updates the same DB seniors test. Be careful with deletes.
 
 ```powershell
+alembic upgrade head
+python -m app.scripts.seed
 uvicorn app.main:app --reload
 ```
 
-## API Documentation
+- Swagger: http://127.0.0.1:8000/docs  
+- Health: http://127.0.0.1:8000/health  
 
-Once the application is running:
+Admin bootstrap (if needed): create via your createsuperuser flow or existing `admin@test.com` account.
 
-- **Swagger UI:** http://127.0.0.1:8000/docs
-- **ReDoc:** http://127.0.0.1:8000/redoc
-- **Health Check:** http://127.0.0.1:8000/health
+## Auth notes for clients
 
-## Development Status
+- Access token: use on every protected API (`Authorization: Bearer …`).
+- Refresh token: optional; call `POST /api/v1/auth/refresh` to get a new access token after 24h without logging in again.
+- After Admin **assigns** a user to a warehouse or changes role, call `GET /api/v1/auth/me` (or login/refresh again). The server always loads warehouse from the database; the JWT snapshot can be outdated for UI display.
 
-Initial project setup completed. Database configuration and API module development are pending.
+## Password rules
+
+Min 8 characters, with uppercase, lowercase, number, and special character. Change-password requires the new password to differ from the current one.

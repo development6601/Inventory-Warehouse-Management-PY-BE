@@ -35,6 +35,11 @@ class Warehouse(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             func.lower(warehouse_code),
             unique=True,
         ),
+        Index(
+            "uq_warehouses_name_lower",
+            func.lower(name),
+            unique=True,
+        ),
     )
 
     def __repr__(self) -> str:

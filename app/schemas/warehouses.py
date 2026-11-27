@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, EmailStr, Field, model_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 
 from app.schemas.common import ManagerBrief
 
@@ -49,16 +48,21 @@ class WarehouseListResponse(BaseModel):
 
 
 class AssignUserRequest(BaseModel):
-    role: Literal["MANAGER", "STAFF"]
+    role: str = Field(min_length=1, max_length=30)
     user_id: UUID | None = None
     email: EmailStr | None = None
+
+    @field_validator("role")
+    @classmethod
+    def normalize_role(cls, value: str) -> str:
+        return value.strip().upper()
 
     @model_validator(mode="after")
     def require_user_identity(self) -> AssignUserRequest:
         if self.user_id is None and self.email is None:
-            raise ValueError("Either user_id or email is required")
+            raise ValueError("Either user_id or email is required.")
         if self.user_id is not None and self.email is not None:
-            raise ValueError("Provide only one of user_id or email")
+            raise ValueError("Provide only one of user_id or email.")
         return self
 
 

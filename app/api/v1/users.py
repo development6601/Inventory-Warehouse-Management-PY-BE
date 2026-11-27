@@ -6,11 +6,12 @@ from uuid import UUID
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from app.core.deps import CurrentUser, get_current_user, require_permission
+from app.core.deps import CurrentUser, require_permission
 from app.database.connection import get_db
 from app.schemas.common import UserPublic
 from app.schemas.users import (
     AdminCreateUserRequest,
+    AdminUpdateUserRequest,
     UserListResponse,
     UserStatusRequest,
     UserStatusResponse,
@@ -44,6 +45,16 @@ def get_user(
     current: Annotated[CurrentUser, Depends(require_permission("user.view"))],
 ):
     return user_service.get_user(db, current, user_id)
+
+
+@router.patch("/{user_id}", response_model=UserPublic)
+def update_user(
+    user_id: UUID,
+    payload: AdminUpdateUserRequest,
+    db: Annotated[Session, Depends(get_db)],
+    _: Annotated[CurrentUser, Depends(require_permission("user.update"))],
+):
+    return user_service.admin_update_user(db, user_id, payload)
 
 
 @router.patch("/{user_id}/status", response_model=UserStatusResponse)

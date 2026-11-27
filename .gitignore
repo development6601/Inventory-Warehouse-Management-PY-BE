@@ -19,3 +19,9 @@ htmlcov/
 .vscode/
 
 docs/
+
+# Local-only test UI (never push / never on Render)
+frontend/
+
+# Temporary local smoke scripts
+_tmp_*.py

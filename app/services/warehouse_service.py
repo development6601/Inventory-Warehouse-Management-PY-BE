@@ -69,10 +69,29 @@ def _to_warehouse_response(db: Session, warehouse: Warehouse) -> WarehouseRespon
     )
 
 
+def _assert_unique_warehouse_name(
+    db: Session,
+    name: str,
+    *,
+    exclude_id: UUID | None = None,
+) -> None:
+    stmt = select(Warehouse).where(func.lower(Warehouse.name) == name.lower())
+    if exclude_id is not None:
+        stmt = stmt.where(Warehouse.id != exclude_id)
+    existing = db.scalar(stmt)
+    if existing is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Warehouse name already exists.",
+        )
+
+
 def create_warehouse(db: Session, payload: WarehouseCreateRequest) -> WarehouseResponse:
+    name = payload.name.strip()
+    _assert_unique_warehouse_name(db, name)
     warehouse = Warehouse(
         warehouse_code=_next_warehouse_code(db),
-        name=payload.name.strip(),
+        name=name,
         location=payload.location.strip(),
         is_active=True,
     )
@@ -120,12 +139,12 @@ def get_warehouse(db: Session, current: CurrentUser, warehouse_id: UUID) -> Ware
     if warehouse is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Warehouse not found",
+            detail="Warehouse not found.",
         )
     if not current.is_admin and current.warehouse_id != warehouse_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Permission denied",
+            detail="You do not have permission to view this warehouse.",
         )
     return _to_warehouse_response(db, warehouse)
 
@@ -139,10 +158,12 @@ def update_warehouse(
     if warehouse is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Warehouse not found",
+            detail="Warehouse not found.",
         )
     if payload.name is not None:
-        warehouse.name = payload.name.strip()
+        name = payload.name.strip()
+        _assert_unique_warehouse_name(db, name, exclude_id=warehouse.id)
+        warehouse.name = name
     if payload.location is not None:
         warehouse.location = payload.location.strip()
     db.add(warehouse)
@@ -160,7 +181,7 @@ def set_warehouse_status(
     if warehouse is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Warehouse not found",
+            detail="Warehouse not found.",
         )
     warehouse.is_active = is_active
     db.add(warehouse)
@@ -191,7 +212,7 @@ def _resolve_assign_target(db: Session, payload: AssignUserRequest) -> User:
     if user is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found",
+            detail="User not found.",
         )
     return user
 
@@ -206,42 +227,47 @@ def assign_user(
     if warehouse is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Warehouse not found",
+            detail="Warehouse not found.",
         )
     if not warehouse.is_active:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Cannot assign users to an inactive warehouse",
+            detail="Cannot assign users to an inactive warehouse.",
         )
 
     if current.is_manager:
         if current.warehouse_id != warehouse_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Managers can only assign users to their own warehouse",
+                detail="Managers can only assign users to their own warehouse.",
             )
         if payload.role != RoleCode.STAFF:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Managers can only assign STAFF role",
+                detail="Managers can only assign the STAFF role.",
             )
     elif not current.is_admin:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Permission denied",
+            detail="You do not have permission to assign users.",
         )
 
+    if payload.role == RoleCode.ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Admin accounts cannot be assigned to a warehouse.",
+        )
     if payload.role not in (RoleCode.MANAGER, RoleCode.STAFF):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Role must be MANAGER or STAFF",
+            detail="Invalid role. Allowed values are MANAGER and STAFF.",
         )
 
     user = _resolve_assign_target(db, payload)
     if user.role.code == RoleCode.ADMIN:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Cannot assign an Admin to a warehouse",
+            detail="Admin accounts cannot be assigned to a warehouse.",
         )
 
     if (
@@ -250,14 +276,14 @@ def assign_user(
     ):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="User is already assigned to another warehouse",
+            detail="This user is already assigned to another warehouse.",
         )
 
     role = db.scalar(select(Role).where(Role.code == payload.role))
     if role is None:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Role not seeded",
+            detail="System roles are not configured. Please contact support.",
         )
 
     user.role_id = role.id
@@ -290,7 +316,7 @@ def assign_user(
     assert refreshed is not None
     wh = refreshed.warehouse_assignment.warehouse if refreshed.warehouse_assignment else None
     return AssignedUserResponse(
-        message="User assigned successfully",
+        message="User assigned successfully.",
         user={
             "id": str(refreshed.id),
             "email": refreshed.email,
@@ -318,29 +344,45 @@ def unassign_user(
     if assignment is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Assignment not found",
+            detail="No assignment found for this user in the selected warehouse.",
         )
 
     if current.is_manager:
         if current.warehouse_id != warehouse_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Managers can only unassign users from their own warehouse",
+                detail=(
+                    "You do not have enough credentials to unassign users "
+                    "from another warehouse."
+                ),
             )
         if assignment.user.role.code != RoleCode.STAFF:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Managers can only unassign STAFF users",
+                detail=(
+                    "Managers can only unassign STAFF. "
+                    "Ask an Admin to remove a Manager from this warehouse "
+                    "(Warehouses → View → Remove)."
+                ),
             )
     elif not current.is_admin:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Permission denied",
+            detail=(
+                "You do not have enough credentials to unassign users. "
+                "Only Admin (any user) or Manager (Staff only) can unassign."
+            ),
         )
 
+    role_label = assignment.user.role.code
     db.delete(assignment)
     db.commit()
-    return MessageResponse(message="User unassigned successfully")
+    return MessageResponse(
+        message=(
+            f"{role_label} removed from this warehouse successfully. "
+            "They are no longer assigned to any warehouse."
+        )
+    )
 
 
 def list_warehouse_users(
@@ -352,12 +394,12 @@ def list_warehouse_users(
     if warehouse is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Warehouse not found",
+            detail="Warehouse not found.",
         )
     if not current.is_admin and current.warehouse_id != warehouse_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Permission denied",
+            detail="You do not have permission to view users for this warehouse.",
         )
 
     users = db.scalars(

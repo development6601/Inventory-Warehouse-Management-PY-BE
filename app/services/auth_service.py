@@ -36,7 +36,7 @@ def _get_role(db: Session, code: str) -> Role:
     if role is None:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Role {code} is not seeded",
+            detail="System roles are not configured. Please contact support.",
         )
     return role
 
@@ -102,7 +102,7 @@ def register_user(db: Session, payload: RegisterRequest):
     if existing is not None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Email already registered",
+            detail="An account with this email already exists.",
         )
 
     staff_role = _get_role(db, RoleCode.STAFF)
@@ -128,12 +128,15 @@ def login_user(db: Session, payload: LoginRequest) -> AuthTokenResponse:
     if user is None or not verify_password(payload.password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid email or password",
+            detail="Invalid email or password.",
         )
     if not user.is_active:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Account is deactivated",
+            detail=(
+                "This account has been deactivated. "
+                "Please contact your administrator."
+            ),
         )
 
     user.last_login_at = datetime.now(timezone.utc)
@@ -158,14 +161,14 @@ def refresh_access_token(db: Session, refresh_token: str) -> AccessTokenResponse
     ):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired refresh token",
+            detail="Invalid or expired refresh token.",
         )
 
     user = _load_user_by_id(db, token_row.user_id)
     if user is None or not user.is_active:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="User not found or inactive",
+            detail="Unable to refresh session. Please sign in again.",
         )
 
     access = create_access_token(
@@ -190,7 +193,7 @@ def logout_user(db: Session, user_id: UUID, refresh_token: str) -> MessageRespon
         token_row.revoked_at = datetime.now(timezone.utc)
         db.add(token_row)
         db.commit()
-    return MessageResponse(message="Logged out successfully")
+    return MessageResponse(message="You have been logged out successfully.")
 
 
 def change_password(
@@ -201,12 +204,12 @@ def change_password(
     if not verify_password(payload.old_password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Old password is incorrect",
+            detail="Current password is incorrect.",
         )
     if payload.new_password == payload.old_password:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="New password must be different from the current password",
+            detail="New password must be different from your current password.",
         )
     user.password_hash = hash_password(payload.new_password)
     db.add(user)
@@ -219,16 +222,17 @@ def change_password(
         .values(revoked_at=datetime.now(timezone.utc))
     )
     db.commit()
-    return MessageResponse(message="Password changed successfully")
+    return MessageResponse(message="Password changed successfully.")
 
 
 def forgot_password(db: Session, email: str) -> ForgotPasswordResponse:
+    """Same message whether or not the email exists (no 404 enumeration)."""
+    generic_message = (
+        "If an account exists for this email, a password reset token has been generated."
+    )
     user = _load_user_by_email(db, email)
     if user is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found",
-        )
+        return ForgotPasswordResponse(message=generic_message)
 
     plain = generate_password_reset_token()
     row = PasswordResetToken(
@@ -239,8 +243,9 @@ def forgot_password(db: Session, email: str) -> ForgotPasswordResponse:
     )
     db.add(row)
     db.commit()
+    # Dev-friendly: include token when user exists so Swagger testing works.
     return ForgotPasswordResponse(
-        message="Password reset token generated",
+        message=generic_message,
         reset_token=plain,
         expires_in_minutes=settings.password_reset_expire_minutes,
     )
@@ -256,14 +261,14 @@ def reset_password(db: Session, payload: ResetPasswordRequest) -> MessageRespons
     if row is None or row.used_at is not None or row.expires_at <= now:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid or expired reset token",
+            detail="Invalid or expired password reset token.",
         )
 
     user = db.get(User, row.user_id)
     if user is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found",
+            detail="User not found.",
         )
 
     user.password_hash = hash_password(payload.new_password)
@@ -279,7 +284,7 @@ def reset_password(db: Session, payload: ResetPasswordRequest) -> MessageRespons
         .values(revoked_at=now)
     )
     db.commit()
-    return MessageResponse(message="Password reset successfully")
+    return MessageResponse(message="Password has been reset successfully.")
 
 
 def update_me(db: Session, user: User, payload: UpdateMeRequest):
@@ -301,6 +306,6 @@ def get_me(db: Session, user_id: UUID):
     if user is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found",
+            detail="User not found.",
         )
     return serialize_user(user)
